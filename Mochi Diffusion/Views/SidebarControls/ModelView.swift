@@ -23,6 +23,17 @@ struct ModelView: View {
         self.groupedModels = groupedModels
     }
 
+    func matchModel(model: SDModel?, models: [SDModel]) -> SDModel? {
+        guard let model = model else { return nil }
+        if let matchedModel = models.filter({ $0.inputSize == model.inputSize && $0.attention == model.attention }).first {
+            return matchedModel
+        } else if let matchedModel = models.filter({ $0.inputSize == model.inputSize }).first {
+            return matchedModel
+        } else {
+            return nil
+        }
+    }
+
     var body: some View {
         Text("Model")
             .sidebarLabelFormat()
@@ -30,18 +41,28 @@ struct ModelView: View {
             ForEach(Array(groupedModels).sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }, id: \.key) { key, models in
                 if models.count > 1 {
                     Button {
-                        if let matchedModel = models.filter({ $0.inputSize == controller.currentModel?.inputSize && $0.attention == controller.currentModel?.attention }).first {
-                            controller.currentModel = matchedModel
-                        } else if let matchedModel = models.filter({ $0.inputSize == controller.currentModel?.inputSize }).first {
-                            controller.currentModel = matchedModel
+                        if let match = matchModel(model: controller.currentModel, models: models) {
+                            controller.currentModel = match
                         } else {
                             controller.currentModel = models.first
                         }
                     } label: {
                         Menu(key) {
-                            ForEach(models) { model in
-                                Button(model.name) {
-                                    controller.currentModel = model
+                            if let match = matchModel(model: controller.currentModel, models: models) {
+                                Button(match.name) {
+                                    controller.currentModel = match
+                                }
+                                Divider()
+                                ForEach(models.filter { $0 != match }) { model in
+                                    Button(model.name) {
+                                        controller.currentModel = model
+                                    }
+                                }
+                            } else {
+                                ForEach(models) { model in
+                                    Button(model.name) {
+                                        controller.currentModel = model
+                                    }
                                 }
                             }
                         }
