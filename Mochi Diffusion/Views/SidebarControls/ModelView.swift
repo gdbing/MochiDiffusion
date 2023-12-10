@@ -26,26 +26,34 @@ struct ModelView: View {
     var body: some View {
         Text("Model")
             .sidebarLabelFormat()
-        Picker("", selection: $controller.currentModel) {
+        Menu(controller.currentModel?.name ?? "") {
             ForEach(Array(groupedModels).sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }, id: \.key) { key, models in
                 if models.count > 1 {
-                    Picker(key, selection: $controller.currentModel) {
-                        ForEach(models) { model in
-                            Text(model.name).tag(Optional(model))
-                        }
-                    }.tag({() -> SDModel? in
-                        if let currentModel = controller.currentModel, models.contains(currentModel) {
-                            return Optional(currentModel)
+                    Button {
+                        if let matchedModel = models.filter({ $0.inputSize == controller.currentModel?.inputSize && $0.attention == controller.currentModel?.attention }).first {
+                            controller.currentModel = matchedModel
+                        } else if let matchedModel = models.filter({ $0.inputSize == controller.currentModel?.inputSize }).first {
+                            controller.currentModel = matchedModel
                         } else {
-                            return models.first
+                            controller.currentModel = models.first
                         }
-                    }())
+                    } label: {
+                        Menu(key) {
+                            ForEach(models) { model in
+                                Button(model.name) {
+                                    controller.currentModel = model
+                                }
+                            }
+                        }
+                    }
                 } else if let model = models.first {
-                    Text(model.name).tag(Optional(model))
+                    Button(model.name) {
+                        controller.currentModel = model
+                    }
                 }
             }
         }
-        .labelsHidden()
+        .help(controller.currentModel?.name ?? "")
         .onAppear {
             self.loadModels(controller.models)
         }
