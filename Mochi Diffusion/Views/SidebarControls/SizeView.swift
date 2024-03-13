@@ -10,10 +10,10 @@ import SwiftUI
 struct SizeView: View {
     @EnvironmentObject private var controller: ImageController
     private let sdimageSizes = [
-        512, 576, 640, 768, 832, 896
+        512, 576, 640, 768, 832, 896,
     ]
     private let sdxlimageSizes = [
-        512, 576, 640, 768, 832, 896, 1_024, 1_152, 1_216, 1_280, 1_344, 1_536
+        512, 576, 640, 768, 832, 896, 1_024, 1_152, 1_216, 1_280, 1_344, 1_536,
     ]
 
     var body: some View {

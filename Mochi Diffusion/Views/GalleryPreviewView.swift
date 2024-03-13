@@ -16,12 +16,15 @@ struct GalleryPreviewView: View {
             Image(image, scale: 1, label: Text(""))
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-            if case let .running(progress) = generator.state, let progress = progress, progress.stepCount > 0 {
+            if case .running(let progress) = generator.state, let progress = progress,
+                progress.stepCount > 0
+            {
                 let step = progress.step + 1
                 let stepValue = Double(step) / Double(progress.stepCount + 1)
 
                 let progressLabel = String(
-                    localized: "About \(formatTimeRemaining(generator.lastStepGenerationElapsedTime, stepsLeft: progress.stepCount - step + 1))",
+                    localized: 
+                        "About \(formatTimeRemaining(generator.lastStepGenerationElapsedTime, stepsLeft: progress.stepCount - step + 1))",
                     comment: "Text displaying the current time remaining"
                 )
 

@@ -82,7 +82,8 @@ final class ImageController: ObservableObject {
     private var quicklookId: UUID? {
         didSet {
             quicklookURL = quicklookId.flatMap { id in
-                try? ImageStore.shared.image(with: id)?.image?.asTransferableImage().image.temporaryFileURL()
+                try? ImageStore.shared.image(with: id)?.image?.asTransferableImage().image
+                    .temporaryFileURL()
             }
         }
     }
@@ -150,20 +151,22 @@ final class ImageController: ObservableObject {
             if let fileList = try? FileManager.default.contentsOfDirectory(atPath: self.imageDir) {
                 var additions = [SDImage]()
                 var removals = [SDImage]()
-                fileList.forEach { filePath in
-                    if !ImageStore.shared.images.map({ URL(filePath: $0.path).lastPathComponent }).contains(where: {
-                        $0 == filePath
-                    }) {
+                for filePath in fileList {
+                    if !ImageStore.shared.images.map({ URL(filePath: $0.path).lastPathComponent })
+                        .contains(where: {
+                            $0 == filePath
+                        })
+                    {
                         let fileURL = URL(filePath: self.imageDir).appending(component: filePath)
                         if let sdi = createSDImageFromURL(fileURL) {
                             additions.append(sdi)
                         }
                     }
                 }
-                ImageStore.shared.images.forEach { sdi in
+                for sdi in ImageStore.shared.images {
                     if !fileList.contains(where: {
-                        sdi.path.isEmpty || // ignore images generated with autosave disabled
-                        $0 == URL(filePath: sdi.path).lastPathComponent
+                        sdi.path.isEmpty  // ignore images generated with autosave disabled
+                            || $0 == URL(filePath: sdi.path).lastPathComponent
                     }) {
                         removals.append(sdi)
                     }
@@ -202,7 +205,8 @@ final class ImageController: ObservableObject {
         /// keep those images in gallery while loading from autosave directory so we don't lose their work
         ImageStore.shared.removeAllExceptUnsaved()
         do {
-            async let (images, imageDirURL) = try ImageGenerator.shared.loadImages(imageDir: imageDir)
+            async let (images, imageDirURL) = try ImageGenerator.shared.loadImages(
+                imageDir: imageDir)
             let count = try await images.count
             try await self.imageDir = imageDirURL.path(percentEncoded: false)
 
@@ -233,10 +237,12 @@ final class ImageController: ObservableObject {
     }
 
     private func loadModels() async {
-        let modelDirectoryURL = directoryURL(fromPath: modelDir, defaultingTo: "MochiDiffusion/models/")
+        let modelDirectoryURL = directoryURL(
+            fromPath: modelDir, defaultingTo: "MochiDiffusion/models/")
         self.modelDir = modelDirectoryURL.path(percentEncoded: false)
 
-        let controlNetDirectoryURL = directoryURL(fromPath: controlNetDir, defaultingTo: "MochiDiffusion/controlnet/")
+        let controlNetDirectoryURL = directoryURL(
+            fromPath: controlNetDir, defaultingTo: "MochiDiffusion/controlnet/")
         self.controlNetDir = controlNetDirectoryURL.path(percentEncoded: false)
 
         await reloadModels()
@@ -394,13 +400,16 @@ final class ImageController: ObservableObject {
                 try await ImageGenerator.shared.generate(genConfig)
             } catch ImageGenerator.GeneratorError.requestedModelNotFound {
                 self.logger.error("Couldn't load \(genConfig.model.name) because it doesn't exist.")
-                await ImageGenerator.shared.updateState(.ready("Couldn't load \(genConfig.model.name) because it doesn't exist."))
+                await ImageGenerator.shared.updateState(
+                    .ready("Couldn't load \(genConfig.model.name) because it doesn't exist."))
             } catch ImageGenerator.GeneratorError.pipelineNotAvailable {
                 self.logger.error("Pipeline is not available.")
-                await ImageGenerator.shared.updateState(.ready("There was a problem loading pipeline."))
+                await ImageGenerator.shared.updateState(
+                    .ready("There was a problem loading pipeline."))
             } catch {
                 self.logger.error("There was a problem generating images: \(error)")
-                await ImageGenerator.shared.updateState(.error("There was a problem generating images: \(error)"))
+                await ImageGenerator.shared.updateState(
+                    .error("There was a problem generating images: \(error)"))
             }
         }
         self.currentGeneration = nil
@@ -553,7 +562,9 @@ final class ImageController: ObservableObject {
         panel.canCreateDirectories = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.message = String(localized: "Choose image", comment: "Message text for choosing starting image or ControlNet image")
+        panel.message = String(
+            localized: "Choose image",
+            comment: "Message text for choosing starting image or ControlNet image")
         panel.prompt = String(localized: "Select", comment: "OK button text for choose image panel")
         let resp = await panel.beginSheetModal(for: NSApplication.shared.mainWindow!)
         if resp != .OK {
@@ -586,7 +597,8 @@ final class ImageController: ObservableObject {
 
         isLoading = true
         var sdis: [SDImage] = []
-        var succeeded = 0, failed = 0
+        var succeeded = 0
+        var failed = 0
 
         for url in selectedURLs {
             var importedURL: URL
@@ -611,7 +623,10 @@ final class ImageController: ObservableObject {
         let alert = NSAlert()
         alert.messageText = String(localized: "Imported \(succeeded) image(s)")
         if failed > 0 {
-            alert.informativeText = String(localized: "\(failed) image(s) were not imported. Only images generated by Mochi Diffusion 2.2 or later can be imported.")
+            alert.informativeText = String(
+                localized:
+                    "\(failed) image(s) were not imported. Only images generated by Mochi Diffusion 2.2 or later can be imported."
+            )
         }
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")

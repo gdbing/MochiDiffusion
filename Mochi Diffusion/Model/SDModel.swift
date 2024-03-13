@@ -273,7 +273,8 @@ private func identifyAttentionType(_ url: URL) -> SDModelAttentionType? {
             return nil
         }
 
-        return metadatas[0].mlProgramOperationTypeHistogram["Ios16.einsum"] != nil ? .splitEinsum : .original
+        return metadatas[0].mlProgramOperationTypeHistogram["Ios16.einsum"] != nil
+            ? .splitEinsum : .original
     } catch {
         logger.warning("Failed to parse model metadata at '\(metadataURL)': \(error)")
         return nil
@@ -310,7 +311,8 @@ private func identifyIfXL(_ url: URL) -> Bool {
 private func unetMetadataURL(from url: URL) -> URL? {
     let potentialMetadataURLs = [
         url.appending(components: "Unet.mlmodelc", "metadata.json"),
-        url.appending(components: "UnetChunk1.mlmodelc", "metadata.json")
+        url.appending(components: "UnetChunk1.mlmodelc", "metadata.json"),
+        url.appending(components: "ControlledUnet.mlmodelc", "metadata.json"),
     ]
 
     return potentialMetadataURLs.first {
@@ -319,14 +321,14 @@ private func unetMetadataURL(from url: URL) -> URL? {
 }
 
 private func identifyInputSize(_ url: URL) -> CGSize? {
-    let encoderMetadataURL = url.appending(path: "VAEDecoder.mlmodelc").appending(path: "metadata.json")
+    let encoderMetadataURL = url.appending(components: "VAEDecoder.mlmodelc", "metadata.json")
     if let jsonData = try? Data(contentsOf: encoderMetadataURL),
         let jsonArray = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]],
         let jsonItem = jsonArray.first,
         let inputSchema = jsonItem["outputSchema"] as? [[String: Any]],
         let controlnetCond = inputSchema.first,
         let shapeString = controlnetCond["shape"] as? String {
-        if shapeString == "[]"{
+        if shapeString == "[]" {
             return nil
         }
         let shapeIntArray = shapeString.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))

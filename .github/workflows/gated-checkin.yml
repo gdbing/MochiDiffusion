@@ -1,8 +1,8 @@
-name: Analyze Build
+name: Gated Check-in
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
@@ -16,9 +16,14 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Run SwiftLint
+      - name: Install swift-format
         run: |
-          /usr/local/bin/swiftlint lint
+          brew update
+          brew install swift-format
+
+      - name: Lint using swift-format
+        run: |
+          /opt/homebrew/bin/swift-format lint -s -p -r ./
 
       - name: Build and Analyze
         run: >

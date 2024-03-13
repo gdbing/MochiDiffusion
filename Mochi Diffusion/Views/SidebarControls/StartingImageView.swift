@@ -20,7 +20,8 @@ struct StartingImageView: View {
         .sidebarLabelFormat()
 
         HStack(alignment: .top) {
-            ImageWellView(image: controller.startingImage, size: CGSize(width: controller.width, height: controller.height)) { image in
+            ImageWellView(image: controller.startingImage, size: CGSize(width: controller.width, height: controller.height))
+            { image in
                 controller.maskImage = nil
                 if let image {
                     ImageController.shared.setStartingImage(image: image)
