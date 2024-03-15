@@ -5,15 +5,23 @@
 //  Created by Joshua Park on 2/12/23.
 //
 
-import Combine
 import CoreML
 @preconcurrency import GuernikaKit
-import OSLog
+//@preconcurrency import StableDiffusion
 import UniformTypeIdentifiers
 
 struct GenerationConfig: Sendable, Identifiable {
     let id = UUID()
-    var pipelineConfig: SampleInput
+    let prompt: String
+    let negativePrompt: String
+    let size: CGSize?
+    var initImage: CGImage?
+    var inpaintMask: CGImage?
+    let strength: Float
+    let stepCount: Int
+    var seed: UInt32
+    let originalStepCount: Int
+    let guidanceScale: Float
     var isXL: Bool
     var autosaveImages: Bool
     var imageDir: String
@@ -30,8 +38,8 @@ struct GenerationConfig: Sendable, Identifiable {
         hasher.combine(model)
         hasher.combine(controlNets)
         hasher.combine(mlComputeUnit)
-        hasher.combine(pipelineConfig.size)
-        hasher.combine(pipelineConfig.initImage == nil)
+        hasher.combine(size)
+        hasher.combine(initImage == nil)
         return hasher.finalize()
     }
 }
@@ -53,7 +61,7 @@ struct GenerationConfig: Sendable, Identifiable {
         case ready(String?)
         case error(String)
         case loading
-        case running(StableDiffusionProgress?)
+        case running(DiffusionProgress?)
     }
 
     private(set) var state = State.ready(nil)
@@ -174,7 +182,10 @@ struct GenerationConfig: Sendable, Identifiable {
     }
 
     func loadPipeline(
-        model: SDModel, controlNet: [String] = [], computeUnit: MLComputeUnits, reduceMemory: Bool
+        model: SDModel, 
+        controlNet: [String] = [],
+        computeUnit: MLComputeUnits,
+        reduceMemory: Bool
     ) async throws {
         let fm = FileManager.default
         if !fm.fileExists(atPath: model.url.path) {
@@ -212,25 +223,38 @@ struct GenerationConfig: Sendable, Identifiable {
         generationStopped = false
 
         var config = inputConfig
-        config.pipelineConfig.seed =
-            config.pipelineConfig.seed == 0
-            ? UInt32.random(in: 0..<UInt32.max) : config.pipelineConfig.seed
+
+        var pipelineConfig = SampleInput(prompt: config.prompt)
+        pipelineConfig.negativePrompt = config.negativePrompt
+        if let size = config.size {
+            pipelineConfig.size = size
+            pipelineConfig.initImage = config.initImage?.scaledAndCroppedTo(size: size)
+            pipelineConfig.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
+        }
+        pipelineConfig.strength = config.strength
+        pipelineConfig.stepCount = config.stepCount
+        pipelineConfig.seed = config.seed == 0 ? UInt32.random(in: 0..<UInt32.max) : config.seed
+        pipelineConfig.originalStepCount = config.originalStepCount
+        pipelineConfig.guidanceScale = config.guidanceScale
+        pipelineConfig.scheduler = convertScheduler(config.scheduler)
+
+        // TODO: controlnet
 
         var sdi = SDImage()
-        sdi.prompt = config.pipelineConfig.prompt
-        sdi.negativePrompt = config.pipelineConfig.negativePrompt
+        sdi.prompt = config.prompt
+        sdi.negativePrompt = config.negativePrompt
         sdi.model = config.model.name
         sdi.scheduler = config.scheduler
         sdi.mlComputeUnit = config.mlComputeUnit
-        sdi.steps = config.pipelineConfig.stepCount
-        sdi.guidanceScale = Double(config.pipelineConfig.guidanceScale)
+        sdi.steps = config.stepCount
+        sdi.guidanceScale = Double(config.guidanceScale)
 
         for index in 0..<config.numberOfImages {
             await updateQueueProgress(
                 QueueProgress(index: index, total: inputConfig.numberOfImages))
             generationStartTime = DispatchTime.now()
 
-            let image = try pipeline.generateImages(input: config.pipelineConfig) {
+            let image = try pipeline.generateImages(input: pipelineConfig) {
                 progress in
 
                 Task { @MainActor in
@@ -270,7 +294,7 @@ struct GenerationConfig: Sendable, Identifiable {
                 sdi.aspectRatio = CGFloat(Double(image.width) / Double(image.height))
             }
             sdi.id = UUID()
-            sdi.seed = config.pipelineConfig.seed
+            sdi.seed = pipelineConfig.seed
             sdi.generatedDate = Date.now
             sdi.path = ""
 
@@ -284,7 +308,7 @@ struct GenerationConfig: Sendable, Identifiable {
                 sdi.path = path.path(percentEncoded: false)
             }
             ImageStore.shared.add(sdi)
-            config.pipelineConfig.seed += 1
+            pipelineConfig.seed += 1
         }
         await updateState(.ready(nil))
     }

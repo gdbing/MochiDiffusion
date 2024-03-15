@@ -7,12 +7,9 @@
 
 import CoreML
 import Foundation
-import GuernikaKit
 import os
 import SwiftUI
 import UniformTypeIdentifiers
-
-typealias StableDiffusionProgress = DiffusionProgress
 
 enum ComputeUnitPreference: String {
     case auto
@@ -300,53 +297,17 @@ final class ImageController: ObservableObject {
             return
         }
 
-        var pipelineConfig = SampleInput(prompt: prompt)
-        pipelineConfig.negativePrompt = negativePrompt
-
-        if model.allowsVariableSize {
-            pipelineConfig.size = CGSize(width: self.width, height: self.height)
-        } else {
-            pipelineConfig.size = model.inputSize
-        }
-
-        if let size = pipelineConfig.size, startingImage != nil {
-            pipelineConfig.initImage = startingImage?.scaledAndCroppedTo(size: size)
-            pipelineConfig.inpaintMask = maskImage?.scaledAndCroppedTo(size: size)
-        }
-        let strength = startingImage == nil && currentControlNets.isEmpty ? 1.0 : self.strength
-
-        pipelineConfig.strength = Float(strength)
-        pipelineConfig.stepCount = Int(steps)
-        pipelineConfig.seed = seed
-        pipelineConfig.originalStepCount = 50
-        pipelineConfig.guidanceScale = Float(guidanceScale)
-        pipelineConfig.scheduler = convertScheduler(scheduler)
-
-        for controlNet in currentControlNets {
-            if controlNet.name != nil, let size = pipelineConfig.size, let image = controlNet.image?.scaledAndCroppedTo(size: size) {
-                let control = SDControlNet(url: URL(fileURLWithPath: controlNetDir + controlNet.name! + ".mlmodelc"))
-                if (model.controltype == .controlNet || model.controltype == .all) && control?.controltype == .controlNet {
-                    guard let c = try? ControlNet(modelAt: URL(fileURLWithPath: controlNetDir + controlNet.name! + ".mlmodelc")) else {
-                        self.logger.error("Couldn't load ControlNet \(controlNet.name!)")
-                        continue
-                    }
-                    let cinput = ConditioningInput(module: c)
-                    cinput.image = image
-//                    ImageGenerator.shared.pipeline?.conditioningInput = [cinput]
-                } else if (model.controltype == .t2IAdapter || model.controltype == .all) && control?.controltype == .t2IAdapter {
-                    guard let a = try? T2IAdapter(modelAt: URL(fileURLWithPath: controlNetDir + controlNet.name! + ".mlmodelc")) else {
-                        self.logger.error("Couldn't load T2IAdapter \(controlNet.name!)")
-                        continue
-                    }
-                    let ainput = ConditioningInput(module: a)
-                    ainput.image = image
-//                    ImageGenerator.shared.pipeline?.conditioningInput = [ainput]
-                }
-            }
-        }
-
         let genConfig = GenerationConfig(
-            pipelineConfig: pipelineConfig,
+            prompt: prompt,
+            negativePrompt: negativePrompt,
+            size: model.allowsVariableSize ? CGSize(width: self.width, height: self.height) : model.inputSize,
+            initImage: startingImage,
+            inpaintMask: maskImage,
+            strength: Float(startingImage == nil && currentControlNets.isEmpty ? 1.0 : self.strength),
+            stepCount: Int(steps),
+            seed: seed,
+            originalStepCount: 50,
+            guidanceScale: Float(guidanceScale),
             isXL: model.isXL,
             autosaveImages: autosaveImages,
             imageDir: imageDir,
@@ -375,7 +336,7 @@ final class ImageController: ObservableObject {
             self.currentGeneration = genConfig
             do {
                 if prevPipeline != genConfig.pipelineHash() {
-                    guard let size = genConfig.pipelineConfig.size else {
+                    guard let size = genConfig.size else {
                         break
                     }
                     var reduceMemoryOrUpdateInputShape = self.reduceMemory
@@ -386,8 +347,7 @@ final class ImageController: ObservableObject {
                         genConfig.model.modifyEncoderMil(width: width, height: height)
                         genConfig.model.modifyDecoderMil(width: width, height: height)
 
-
-                        if genConfig.pipelineConfig.initImage != nil {
+                        if genConfig.initImage != nil {
                             reduceMemoryOrUpdateInputShape = true
                             genConfig.model.modifyInputSize(width: width, height: height)
                         }

@@ -6,9 +6,9 @@
 //
 
 import Foundation
-import GuernikaKit
+@preconcurrency import GuernikaKit
 
-final class Tokenizer {
+final class Tokenizer: Sendable {
     private let bpeTokenizer: BPETokenizer
 
     init?(modelDir: URL, isGuernika: Bool) {

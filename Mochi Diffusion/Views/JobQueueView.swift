@@ -80,9 +80,9 @@ private struct JobView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(config.pipelineConfig.prompt)
+                    Text(config.prompt)
                         .lineLimit(1)
-                        .help(config.pipelineConfig.prompt)
+                        .help(config.prompt)
                     Text(config.model.name)
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
@@ -137,19 +137,19 @@ private struct InfoPopoverView: View {
     func copyOptionsToSidebar() {
         Task {
             var image = SDImage()
-            image.prompt = config.pipelineConfig.prompt
-            image.negativePrompt = config.pipelineConfig.negativePrompt
-            image.steps = config.pipelineConfig.stepCount
-            image.guidanceScale = Double(config.pipelineConfig.guidanceScale)
-            image.seed = config.pipelineConfig.seed
+            image.prompt = config.prompt
+            image.negativePrompt = config.negativePrompt
+            image.steps = config.stepCount
+            image.guidanceScale = Double(config.guidanceScale)
+            image.seed = config.seed
             image.scheduler = config.scheduler
             controller.copyToPrompt(image)
 
             controller.currentModel = config.model
 
-            if let startingImage = config.pipelineConfig.initImage, let strength = config.pipelineConfig.strength {
+            if let startingImage = config.initImage {
                 controller.startingImage = startingImage
-                controller.strength = Double(strength)
+                controller.strength = Double(config.strength)
             } else {
                 await controller.unsetStartingImage()
             }
@@ -176,24 +176,24 @@ private struct InfoPopoverView: View {
                     )
                     InfoGridRow(
                         type: LocalizedStringKey(Metadata.includeInImage.rawValue),
-                        text: config.pipelineConfig.prompt,
+                        text: config.prompt,
                         showCopyToPromptOption: true,
-                        callback: { controller.prompt = config.pipelineConfig.prompt }
+                        callback: { controller.prompt = config.prompt }
                     )
                     InfoGridRow(
                         type: LocalizedStringKey(Metadata.excludeFromImage.rawValue),
-                        text: config.pipelineConfig.negativePrompt,
+                        text: config.negativePrompt,
                         showCopyToPromptOption: true,
                         callback: {
-                            controller.negativePrompt = config.pipelineConfig.negativePrompt
+                            controller.negativePrompt = config.negativePrompt
                         }
                     )
-                    if config.pipelineConfig.seed != 0 {
+                    if config.seed != 0 {
                         InfoGridRow(
                             type: LocalizedStringKey(Metadata.seed.rawValue),
-                            text: String(config.pipelineConfig.seed),
+                            text: String(config.seed),
                             showCopyToPromptOption: true,
-                            callback: { controller.seed = config.pipelineConfig.seed }
+                            callback: { controller.seed = config.seed }
                         )
                     }
                     if config.numberOfImages != 1 {
@@ -206,18 +206,18 @@ private struct InfoPopoverView: View {
                     }
                     InfoGridRow(
                         type: LocalizedStringKey(Metadata.steps.rawValue),
-                        text: String(config.pipelineConfig.stepCount),
+                        text: String(config.stepCount),
                         showCopyToPromptOption: true,
-                        callback: { controller.steps = Double(config.pipelineConfig.stepCount) }
+                        callback: { controller.steps = Double(config.stepCount) }
                     )
                     InfoGridRow(
                         type: LocalizedStringKey(Metadata.guidanceScale.rawValue),
                         text: String(
-                            config.pipelineConfig.guidanceScale.formatted(
+                            config.guidanceScale.formatted(
                                 .number.precision(.fractionLength(2)))),
                         showCopyToPromptOption: true,
                         callback: {
-                            controller.guidanceScale = Double(config.pipelineConfig.guidanceScale)
+                            controller.guidanceScale = Double(config.guidanceScale)
                         }
                     )
                     InfoGridRow(
@@ -231,7 +231,7 @@ private struct InfoPopoverView: View {
                         text: MLComputeUnits.toString(config.mlComputeUnit),
                         showCopyToPromptOption: false
                     )
-                    if let startingImage = config.pipelineConfig.initImage, let strength = config.pipelineConfig.strength {
+                    if let startingImage = config.initImage {
                         InfoGridRow(
                             type: LocalizedStringKey("Starting Image"),
                             image: startingImage,
@@ -239,11 +239,11 @@ private struct InfoPopoverView: View {
                         )
                         InfoGridRow(
                             type: LocalizedStringKey("Strength"),
-                            text: strength.formatted(
+                            text: config.strength.formatted(
                                 .number.precision(.fractionLength(2))),
                             showCopyToPromptOption: true,
                             callback: {
-                                controller.strength = Double(strength)
+                                controller.strength = Double(config.strength)
                             }
                         )
                     }
