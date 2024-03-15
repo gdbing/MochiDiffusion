@@ -11,9 +11,17 @@ import GuernikaKit
 final class Tokenizer {
     private let bpeTokenizer: BPETokenizer
 
-    init?(modelDir: URL) {
-        let mergesURL = modelDir.appendingPathComponent("TextEncoder.mlmodelc/merges.txt", conformingTo: .url)
-        let vocabURL = modelDir.appendingPathComponent("TextEncoder.mlmodelc/vocab.json", conformingTo: .url)
+    init?(modelDir: URL, isGuernika: Bool) {
+        let mergesURL: URL
+        let vocabURL: URL
+
+        if isGuernika {
+            mergesURL = modelDir.appendingPathComponent("TextEncoder.mlmodelc/merges.txt", conformingTo: .url)
+            vocabURL = modelDir.appendingPathComponent("TextEncoder.mlmodelc/vocab.json", conformingTo: .url)
+        } else {
+            mergesURL = modelDir.appendingPathComponent("merges.txt", conformingTo: .url)
+            vocabURL = modelDir.appendingPathComponent("vocab.json", conformingTo: .url)
+        }
 
         do {
             try self.bpeTokenizer = BPETokenizer(mergesUrl: mergesURL, vocabularyUrl: vocabURL, addedVocabUrl: nil)

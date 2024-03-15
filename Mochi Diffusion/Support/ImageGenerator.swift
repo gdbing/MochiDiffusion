@@ -67,8 +67,6 @@ struct GenerationConfig: Sendable, Identifiable {
 
     private var pipeline: (any StableDiffusionPipeline)?
 
-    private(set) var tokenizer: Tokenizer?
-
     private var generationStopped = false
 
     private(set) var lastStepGenerationElapsedTime: Double?
@@ -202,7 +200,6 @@ struct GenerationConfig: Sendable, Identifiable {
         }
 
         self.pipeline?.reduceMemory = reduceMemory
-        self.tokenizer = Tokenizer(modelDir: model.url)
         await updateState(.ready(nil))
     }
 

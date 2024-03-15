@@ -22,6 +22,7 @@ struct SDModel: Identifiable {
     let allowsVariableSize: Bool
     private let vaeAllowsVariableSize: Bool
     let isGuernika: Bool
+    let tokenizer: Tokenizer?
 
     var id: URL { url }
 
@@ -37,6 +38,7 @@ struct SDModel: Identifiable {
 
         let isXL = identifyIfXL(url)
         let controltype = identifyControlNetType(url)
+        let isGuernika = identifyIsGuernika(url)
 
         self.url = url
         self.name = name
@@ -47,15 +49,16 @@ struct SDModel: Identifiable {
         self.controltype = controltype
         self.allowsVariableSize = allowsVariableSize
         self.vaeAllowsVariableSize = vaeAllowsVariableSize
-        if identifyIsGuernika(url) {
-            self.isGuernika = true
-        } else {
-            self.isGuernika = false
-        }
+        self.isGuernika = isGuernika
+        self.tokenizer = Tokenizer(modelDir: url, isGuernika: isGuernika)
     }
 }
 
 extension SDModel: Hashable {
+    static func == (lhs: SDModel, rhs: SDModel) -> Bool {
+        lhs.url == rhs.url
+    }
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
