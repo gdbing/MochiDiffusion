@@ -263,8 +263,8 @@ extension SDModel {
 }
 
 private func identifyIsGuernika(_ url: URL) -> Bool {
-    // TODO:
-    return true
+    let guernikaVocabURL = url.appending(components: "TextEncoder.mlmodelc", "vocab.json")
+    return FileManager.default.fileExists(atPath: guernikaVocabURL.path(percentEncoded: false))
 }
 
 private func identifyAttentionType(_ url: URL) -> SDModelAttentionType? {
