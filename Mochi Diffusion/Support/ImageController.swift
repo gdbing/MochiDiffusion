@@ -101,8 +101,12 @@ final class ImageController: ObservableObject {
             modelName = model.name
             controlNet = model.controlNet
             currentControlNets = []
+            tokenizer = Tokenizer(modelDir: model.url, isGuernika: model.isGuernika)
         }
     }
+
+    @Published
+    var tokenizer: Tokenizer?
 
     @Published
     private(set) var currentControlNets: [(name: String?, image: CGImage?)] = []
@@ -246,7 +250,6 @@ final class ImageController: ObservableObject {
     }
 
     private func reloadModels() async {
-        models = []
         logger.info("Started loading model directory at: \"\(self.modelDir)\"")
 
         do {

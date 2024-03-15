@@ -90,7 +90,7 @@ struct PromptView: View {
                 text: $controller.prompt,
                 height: 120,
                 focusBinding: $focusCon.promptFieldIsFocused,
-                tokenizer: controller.currentModel?.tokenizer
+                tokenizer: controller.tokenizer
             )
 
             Text("Exclude from Image")
@@ -99,7 +99,7 @@ struct PromptView: View {
                 text: $controller.negativePrompt,
                 height: 70,
                 focusBinding: $focusCon.negativePromptFieldIsFocused,
-                tokenizer: controller.currentModel?.tokenizer
+                tokenizer: controller.tokenizer
             )
 
             Spacer().frame(height: 2)

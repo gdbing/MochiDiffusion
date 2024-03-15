@@ -22,7 +22,6 @@ struct SDModel: Identifiable {
     let allowsVariableSize: Bool
     private let vaeAllowsVariableSize: Bool
     let isGuernika: Bool
-    let tokenizer: Tokenizer?
 
     var id: URL { url }
 
@@ -50,7 +49,6 @@ struct SDModel: Identifiable {
         self.allowsVariableSize = allowsVariableSize
         self.vaeAllowsVariableSize = vaeAllowsVariableSize
         self.isGuernika = isGuernika
-        self.tokenizer = Tokenizer(modelDir: url, isGuernika: isGuernika)
     }
 }
 
