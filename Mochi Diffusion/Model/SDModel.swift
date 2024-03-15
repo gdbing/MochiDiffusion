@@ -21,6 +21,7 @@ struct SDModel: Identifiable {
     let controltype: ControlType?
     let allowsVariableSize: Bool
     private let vaeAllowsVariableSize: Bool
+    let isGuernika: Bool
 
     var id: URL { url }
 
@@ -46,6 +47,11 @@ struct SDModel: Identifiable {
         self.controltype = controltype
         self.allowsVariableSize = allowsVariableSize
         self.vaeAllowsVariableSize = vaeAllowsVariableSize
+        if identifyIsGuernika(url) {
+            self.isGuernika = true
+        } else {
+            self.isGuernika = false
+        }
     }
 }
 
@@ -255,6 +261,11 @@ extension SDModel {
     }
 }
 
+private func identifyIsGuernika(_ url: URL) -> Bool {
+    // TODO:
+    return true
+}
+
 private func identifyAttentionType(_ url: URL) -> SDModelAttentionType? {
     guard let metadataURL = unetMetadataURL(from: url) else {
         logger.warning("No model metadata found at '\(url)'")
@@ -374,7 +385,6 @@ private func identifyControlNetType(_ url: URL) -> ControlType? {
     }
 }
 
-// swiftlint:disable discouraged_optional_boolean
 private func identifyAllowsVariableSize(_ url: URL) -> Bool? {
     let metadataURL = url.appending(path: "Unet.mlmodelc").appending(path: "metadata.json")
 
@@ -426,4 +436,3 @@ private func identifyVaeAllowsVariableSize(_ url: URL) -> Bool? {
 
     return inputSchema.first { ($0["hasShapeFlexibility"] as? String) == "1" } != nil
 }
-// swiftlint:enable discouraged_optional_boolean

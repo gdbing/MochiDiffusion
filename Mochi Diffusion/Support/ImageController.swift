@@ -378,16 +378,19 @@ final class ImageController: ObservableObject {
                     guard let size = genConfig.pipelineConfig.size else {
                         break
                     }
-                    let width = Int(size.width)
-                    let height = Int(size.height)
-
-                    genConfig.model.modifyEncoderMil(width: width, height: height)
-                    genConfig.model.modifyDecoderMil(width: width, height: height)
-
                     var reduceMemoryOrUpdateInputShape = self.reduceMemory
-                    if genConfig.pipelineConfig.initImage != nil {
-                        reduceMemoryOrUpdateInputShape = true
-                        genConfig.model.modifyInputSize(width: width, height: height)
+                    if genConfig.model.allowsVariableSize {
+                        let width = Int(size.width)
+                        let height = Int(size.height)
+
+                        genConfig.model.modifyEncoderMil(width: width, height: height)
+                        genConfig.model.modifyDecoderMil(width: width, height: height)
+
+
+                        if genConfig.pipelineConfig.initImage != nil {
+                            reduceMemoryOrUpdateInputShape = true
+                            genConfig.model.modifyInputSize(width: width, height: height)
+                        }
                     }
                     try await ImageGenerator.shared.loadPipeline(
                         model: genConfig.model,
