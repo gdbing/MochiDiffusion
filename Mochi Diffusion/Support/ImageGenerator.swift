@@ -22,7 +22,6 @@ struct GenerationConfig: Sendable, Identifiable {
     var seed: UInt32
     let originalStepCount: Int
     let guidanceScale: Float
-    var isXL: Bool
     var autosaveImages: Bool
     var imageDir: String
     var imageType: String
@@ -32,6 +31,7 @@ struct GenerationConfig: Sendable, Identifiable {
     var scheduler: Scheduler
     var upscaleGeneratedImages: Bool
     var controlNets: [String]
+    let safetyCheckerEnabled: Bool
 
     func pipelineHash() -> Int {
         var hasher = Hasher()
@@ -252,7 +252,7 @@ struct GenerationConfig: Sendable, Identifiable {
         await updateState(.loading)
         generationStopped = false
 
-        var config = inputConfig
+        let config = inputConfig
 
         var sdi = SDImage()
         sdi.prompt = config.prompt
@@ -263,8 +263,69 @@ struct GenerationConfig: Sendable, Identifiable {
         sdi.steps = config.stepCount
         sdi.guidanceScale = Double(config.guidanceScale)
 
-        var seed = config.seed
-        try await generateGuernikaImage(config) { image in
+        var guernikaPipelineConfig: SampleInput?
+        var sdPipelineConfig: PipelineConfiguration?
+
+        if config.model.isGuernika {
+            guernikaPipelineConfig = SampleInput(prompt: config.prompt)
+            guernikaPipelineConfig?.negativePrompt = config.negativePrompt
+            if let size = config.size {
+                guernikaPipelineConfig?.size = size
+                guernikaPipelineConfig?.initImage = config.initImage?.scaledAndCroppedTo(size: size)
+                guernikaPipelineConfig?.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
+            }
+            guernikaPipelineConfig?.strength = config.strength
+            guernikaPipelineConfig?.stepCount = config.stepCount
+            guernikaPipelineConfig?.seed = config.seed
+            guernikaPipelineConfig?.originalStepCount = config.originalStepCount
+            guernikaPipelineConfig?.guidanceScale = config.guidanceScale
+            guernikaPipelineConfig?.scheduler = convertScheduler(config.scheduler)
+
+            // TODO: controlnet
+        } else {
+            sdPipelineConfig = StableDiffusionPipeline.Configuration(prompt: config.prompt)
+            sdPipelineConfig?.negativePrompt = config.negativePrompt
+            if let size = config.model.inputSize {
+                sdPipelineConfig?.startingImage = config.initImage?.scaledAndCroppedTo(size: size)
+            }
+            sdPipelineConfig?.strength = config.strength
+            sdPipelineConfig?.stepCount = config.stepCount
+            sdPipelineConfig?.seed = config.seed
+            sdPipelineConfig?.guidanceScale = config.guidanceScale
+            sdPipelineConfig?.disableSafety = !config.safetyCheckerEnabled
+            sdPipelineConfig?.schedulerType = config.scheduler == .pndm ? .pndmScheduler : .dpmSolverMultistepScheduler // TODO: communicate this
+            // TODO: controlnet
+    //        for controlNet in currentControlNets {
+    //            if controlNet.name != nil, let size = currentModel?.inputSize,
+    //                let image = controlNet.image?.scaledAndCroppedTo(size: size)
+    //            {
+    //                pipelineConfig.controlNetInputs.append(image)
+    //            }
+    //        }
+//            sdPipelineConfig?.useDenoisedIntermediates = await ImageController.shared.showHighqualityPreview
+            if config.model.isXL {
+                sdPipelineConfig?.encoderScaleFactor = 0.13025
+                sdPipelineConfig?.decoderScaleFactor = 0.13025
+                sdPipelineConfig?.schedulerTimestepSpacing = .karras
+            }
+        }
+
+        for index in 0..<config.numberOfImages {
+            await updateQueueProgress(
+                QueueProgress(index: index, total: config.numberOfImages))
+            generationStartTime = DispatchTime.now()
+            
+            var image: CGImage?
+            if config.model.isGuernika, let guernikaPipelineConfig {
+                image = try await generateGuernikaImage(config, pipelineConfig: guernikaPipelineConfig)
+            } else if !config.model.isGuernika, let sdPipelineConfig {
+                image = try await generateSDImage(config: config, pipelineConfig: sdPipelineConfig)
+            }
+
+            if generationStopped {
+                break
+            }
+
             if let image {
                 if config.upscaleGeneratedImages, let upscaledImg = await Upscaler.shared.upscale(cgImage: image) {
                     sdi.image = upscaledImg
@@ -276,7 +337,7 @@ struct GenerationConfig: Sendable, Identifiable {
                     sdi.aspectRatio = CGFloat(Double(image.width) / Double(image.height))
                 }
                 sdi.id = UUID()
-                sdi.seed = seed
+                sdi.seed = guernikaPipelineConfig?.seed ?? sdPipelineConfig?.seed ?? 0
                 sdi.generatedDate = Date.now
                 sdi.path = ""
 
@@ -291,70 +352,75 @@ struct GenerationConfig: Sendable, Identifiable {
                     }
                 }
                 ImageStore.shared.add(sdi)
-                seed += 1
+
+                guernikaPipelineConfig?.seed += 1
+                sdPipelineConfig?.seed += 1
             }
         }
 
         await updateState(.ready(nil))
     }
 
-    private func generateGuernikaImage(_ config: GenerationConfig, storeImage: (CGImage?) async -> Void) async throws {
+    private func generateSDImage(config: GenerationConfig, pipelineConfig: PipelineConfiguration) async throws -> CGImage? {
+        guard let pipeline = sdPipeline else {
+            await updateState(.error("Pipeline is not loaded."))
+            throw GeneratorError.pipelineNotAvailable
+        }
+        let images = try pipeline.generateImages(configuration: pipelineConfig) {
+            progress in
+
+            Task { @MainActor in
+                state = .running((step: progress.step, stepCount: progress.stepCount))
+                let endTime = DispatchTime.now()
+                lastStepGenerationElapsedTime = Double(
+                    endTime.uptimeNanoseconds - (generationStartTime?.uptimeNanoseconds ?? 0))
+                generationStartTime = endTime
+            }
+
+            Task {
+                if pipelineConfig.useDenoisedIntermediates,
+                    let currentImage = progress.currentImages.last
+                {
+                    ImageStore.shared.setCurrentGenerating(image: currentImage)
+                } else {
+                    ImageStore.shared.setCurrentGenerating(image: nil)
+                }
+            }
+
+            return !generationStopped
+        }
+        return images.first ?? nil
+    }
+
+    private func generateGuernikaImage(_ config: GenerationConfig, pipelineConfig: SampleInput) async throws -> CGImage? {
         guard let pipeline = guernikaPipeline else {
             await updateState(.error("Pipeline is not loaded."))
             throw GeneratorError.pipelineNotAvailable
         }
 
-        var pipelineConfig = SampleInput(prompt: config.prompt)
-        pipelineConfig.negativePrompt = config.negativePrompt
-        if let size = config.size {
-            pipelineConfig.size = size
-            pipelineConfig.initImage = config.initImage?.scaledAndCroppedTo(size: size)
-            pipelineConfig.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
-        }
-        pipelineConfig.strength = config.strength
-        pipelineConfig.stepCount = config.stepCount
-        pipelineConfig.seed = config.seed
-        pipelineConfig.originalStepCount = config.originalStepCount
-        pipelineConfig.guidanceScale = config.guidanceScale
-        pipelineConfig.scheduler = convertScheduler(config.scheduler)
+        let image = try pipeline.generateImages(input: pipelineConfig) {
+            progress in
 
-        // TODO: controlnet
-
-        for index in 0..<config.numberOfImages {
-            await updateQueueProgress(
-                QueueProgress(index: index, total: config.numberOfImages))
-            generationStartTime = DispatchTime.now()
-
-            let image = try pipeline.generateImages(input: pipelineConfig) {
-                progress in
-
-                Task { @MainActor in
-                    state = .running((step: progress.step, stepCount: progress.stepCount))
-                    let endTime = DispatchTime.now()
-                    lastStepGenerationElapsedTime = Double(
-                        endTime.uptimeNanoseconds - (generationStartTime?.uptimeNanoseconds ?? 0))
-                    generationStartTime = endTime
-                }
-
-                Task {
-                    let currentImage = progress.currentLatentSample
-                    if await ImageController.shared.showHighqualityPreview {
-                        ImageStore.shared.setCurrentGenerating(image: try pipeline.decodeToImage(currentImage))
-                    } else {
-                        ImageStore.shared.setCurrentGenerating(image: pipeline.latentToImage(currentImage))
-                    }
-                }
-
-                return !generationStopped
-            }
-            if generationStopped {
-                break
+            Task { @MainActor in
+                state = .running((step: progress.step, stepCount: progress.stepCount))
+                let endTime = DispatchTime.now()
+                lastStepGenerationElapsedTime = Double(
+                    endTime.uptimeNanoseconds - (generationStartTime?.uptimeNanoseconds ?? 0))
+                generationStartTime = endTime
             }
 
-            await storeImage(image)
+            Task {
+                let currentImage = progress.currentLatentSample
+                if await ImageController.shared.showHighqualityPreview {
+                    ImageStore.shared.setCurrentGenerating(image: try pipeline.decodeToImage(currentImage))
+                } else {
+                    ImageStore.shared.setCurrentGenerating(image: pipeline.latentToImage(currentImage))
+                }
+            }
 
-            pipelineConfig.seed += 1
+            return !generationStopped
         }
+        return image
     }
 
     func stopGenerate() async {

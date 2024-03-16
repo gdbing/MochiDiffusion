@@ -311,7 +311,6 @@ final class ImageController: ObservableObject {
             seed: seed == 0 ? UInt32.random(in: 0..<UInt32.max) : seed,
             originalStepCount: 50,
             guidanceScale: Float(guidanceScale),
-            isXL: model.isXL,
             autosaveImages: autosaveImages,
             imageDir: imageDir,
             imageType: imageType,
@@ -320,7 +319,8 @@ final class ImageController: ObservableObject {
             mlComputeUnit: mlComputeUnitPreference.computeUnits(forModel: model),
             scheduler: scheduler,
             upscaleGeneratedImages: upscaleGeneratedImages,
-            controlNets: currentControlNets.filter { $0.image != nil }.compactMap(\.name)
+            controlNets: currentControlNets.filter { $0.image != nil }.compactMap(\.name),
+            safetyCheckerEnabled: safetyChecker
         )
 
         self.generationQueue.append(genConfig)
@@ -339,28 +339,36 @@ final class ImageController: ObservableObject {
             self.currentGeneration = genConfig
             do {
                 if prevPipeline != genConfig.pipelineHash() {
-                    guard let size = genConfig.size else {
-                        break
-                    }
-                    var reduceMemoryOrUpdateInputShape = self.reduceMemory
-                    if genConfig.model.allowsVariableSize {
-                        let width = Int(size.width)
-                        let height = Int(size.height)
-
-                        genConfig.model.modifyEncoderMil(width: width, height: height)
-                        genConfig.model.modifyDecoderMil(width: width, height: height)
-
-                        if genConfig.initImage != nil {
-                            reduceMemoryOrUpdateInputShape = true
-                            genConfig.model.modifyInputSize(width: width, height: height)
+                    if genConfig.model.isGuernika {
+                        guard let size = genConfig.size else {
+                            break
                         }
+                        var reduceMemoryOrUpdateInputShape = self.reduceMemory
+                        if genConfig.model.allowsVariableSize {
+                            let width = Int(size.width)
+                            let height = Int(size.height)
+
+                            genConfig.model.modifyEncoderMil(width: width, height: height)
+                            genConfig.model.modifyDecoderMil(width: width, height: height)
+
+                            if genConfig.initImage != nil {
+                                reduceMemoryOrUpdateInputShape = true
+                                genConfig.model.modifyInputSize(width: width, height: height)
+                            }
+                        }
+                        try await ImageGenerator.shared.loadGuernikaPipeline(
+                            model: genConfig.model,
+                            controlNet: genConfig.controlNets,
+                            computeUnit: genConfig.mlComputeUnit,
+                            reduceMemory: reduceMemoryOrUpdateInputShape
+                        )
+                    } else {
+                        try await ImageGenerator.shared.loadPipeline(
+                            model: genConfig.model,
+                            controlNet: genConfig.controlNets,
+                            computeUnit: genConfig.mlComputeUnit,
+                            reduceMemory: self.reduceMemory)
                     }
-                    try await ImageGenerator.shared.loadGuernikaPipeline(
-                        model: genConfig.model,
-                        controlNet: genConfig.controlNets,
-                        computeUnit: genConfig.mlComputeUnit,
-                        reduceMemory: reduceMemoryOrUpdateInputShape
-                    )
                     prevPipeline = genConfig.pipelineHash()
                 }
                 try await ImageGenerator.shared.generate(genConfig)
