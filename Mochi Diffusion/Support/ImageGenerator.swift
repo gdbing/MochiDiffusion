@@ -7,7 +7,7 @@
 
 import CoreML
 @preconcurrency import GuernikaKit
-//@preconcurrency import StableDiffusion
+@preconcurrency import StableDiffusion
 import UniformTypeIdentifiers
 
 struct GenerationConfig: Sendable, Identifiable {
@@ -61,7 +61,7 @@ struct GenerationConfig: Sendable, Identifiable {
         case ready(String?)
         case error(String)
         case loading
-        case running(DiffusionProgress?)
+        case running((step: Int, stepCount: Int)?)
     }
 
     private(set) var state = State.ready(nil)
@@ -73,7 +73,8 @@ struct GenerationConfig: Sendable, Identifiable {
 
     private(set) var queueProgress = QueueProgress(index: 0, total: 0)
 
-    private var pipeline: (any StableDiffusionPipeline)?
+    private var guernikaPipeline: (any GuernikaPipelineProtocol)?
+    private var sdPipeline: (any StableDiffusionPipelineProtocol)?
 
     private var generationStopped = false
 
@@ -153,17 +154,18 @@ struct GenerationConfig: Sendable, Identifiable {
                     ).path(percentEncoded: false)
                     let hasControlNet = fm.fileExists(atPath: unetMetadataPath)
 
-                    if hasControlNet {
-                        let controlNetSymLinkPath = url.appending(component: "controlnet").path(
-                            percentEncoded: false)
-
-                        if !fm.fileExists(atPath: controlNetSymLinkPath) {
-                            try? fm.createSymbolicLink(
-                                atPath: controlNetSymLinkPath,
-                                withDestinationPath: controlNetDirectoryURL.path(
-                                    percentEncoded: false))
-                        }
-                    }
+                    // TODO: controlnet
+//                    if hasControlNet {
+//                        let controlNetSymLinkPath = url.appending(component: "controlnet").path(
+//                            percentEncoded: false)
+//
+//                        if !fm.fileExists(atPath: controlNetSymLinkPath) {
+//                            try? fm.createSymbolicLink(
+//                                atPath: controlNetSymLinkPath,
+//                                withDestinationPath: controlNetDirectoryURL.path(
+//                                    percentEncoded: false))
+//                        }
+//                    }
 
                     return SDModel(
                         url: url, name: url.lastPathComponent,
@@ -197,48 +199,60 @@ struct GenerationConfig: Sendable, Identifiable {
         let config = MLModelConfiguration()
         config.computeUnits = computeUnit
 
+        if model.isXL {
+            self.sdPipeline = try StableDiffusionXLPipeline(
+                resourcesAt: model.url,
+                configuration: config,
+                reduceMemory: reduceMemory
+            )
+        } else {
+            self.sdPipeline = try StableDiffusionPipeline(
+                resourcesAt: model.url,
+                controlNet: controlNet,
+                configuration: config,
+                disableSafety: true,
+                reduceMemory: reduceMemory
+            )
+        }
+    }
+
+    func loadGuernikaPipeline(
+        model: SDModel,
+        controlNet: [String] = [],
+        computeUnit: MLComputeUnits,
+        reduceMemory: Bool
+    ) async throws {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: model.url.path) {
+            await updateState(.error("Couldn't load \(model.name) because it doesn't exist."))
+            throw GeneratorError.requestedModelNotFound
+        }
+
+        await updateState(.loading)
+
         let modelresource = try GuernikaKit.load(at: model.url)
 
         switch modelresource {
-        case is StableDiffusionXLPipeline:
-            self.pipeline = modelresource as? StableDiffusionXLPipeline
+        case is GuernikaXLPipeline:
+            self.guernikaPipeline = modelresource as? GuernikaXLPipeline
         case is StableDiffusionXLRefinerPipeline:
-            self.pipeline = modelresource as? StableDiffusionXLRefinerPipeline
+            self.guernikaPipeline = modelresource as? StableDiffusionXLRefinerPipeline
         case is StableDiffusionPix2PixPipeline:
-            self.pipeline = modelresource as? StableDiffusionPix2PixPipeline
+            self.guernikaPipeline = modelresource as? StableDiffusionPix2PixPipeline
         default:
-            self.pipeline = modelresource as? StableDiffusionMainPipeline
+            self.guernikaPipeline = modelresource as? StableDiffusionMainPipeline
         }
 
-        self.pipeline?.reduceMemory = reduceMemory
+        self.guernikaPipeline?.reduceMemory = reduceMemory
+        self.guernikaPipeline?.computeUnits = computeUnit.guernikaComputeUnit()
         await updateState(.ready(nil))
     }
 
     func generate(_ inputConfig: GenerationConfig) async throws {
-        guard let pipeline = pipeline else {
-            await updateState(.error("Pipeline is not loaded."))
-            throw GeneratorError.pipelineNotAvailable
-        }
         await updateState(.loading)
         generationStopped = false
 
         var config = inputConfig
-
-        var pipelineConfig = SampleInput(prompt: config.prompt)
-        pipelineConfig.negativePrompt = config.negativePrompt
-        if let size = config.size {
-            pipelineConfig.size = size
-            pipelineConfig.initImage = config.initImage?.scaledAndCroppedTo(size: size)
-            pipelineConfig.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
-        }
-        pipelineConfig.strength = config.strength
-        pipelineConfig.stepCount = config.stepCount
-        pipelineConfig.seed = config.seed == 0 ? UInt32.random(in: 0..<UInt32.max) : config.seed
-        pipelineConfig.originalStepCount = config.originalStepCount
-        pipelineConfig.guidanceScale = config.guidanceScale
-        pipelineConfig.scheduler = convertScheduler(config.scheduler)
-
-        // TODO: controlnet
 
         var sdi = SDImage()
         sdi.prompt = config.prompt
@@ -249,16 +263,73 @@ struct GenerationConfig: Sendable, Identifiable {
         sdi.steps = config.stepCount
         sdi.guidanceScale = Double(config.guidanceScale)
 
+        var seed = config.seed
+        try await generateGuernikaImage(config) { image in
+            if let image {
+                if config.upscaleGeneratedImages, let upscaledImg = await Upscaler.shared.upscale(cgImage: image) {
+                    sdi.image = upscaledImg
+                    sdi.aspectRatio = CGFloat(
+                        Double(upscaledImg.width) / Double(upscaledImg.height))
+                    sdi.upscaler = "RealESRGAN"
+                } else {
+                    sdi.image = image
+                    sdi.aspectRatio = CGFloat(Double(image.width) / Double(image.height))
+                }
+                sdi.id = UUID()
+                sdi.seed = seed
+                sdi.generatedDate = Date.now
+                sdi.path = ""
+
+                if config.autosaveImages && !config.imageDir.isEmpty {
+                    var pathURL = URL(fileURLWithPath: config.imageDir, isDirectory: true)
+                    let count = ImageStore.shared.images.endIndex + 1
+                    pathURL.append(path: sdi.filenameWithoutExtension(count: count))
+
+                    let type = UTType.fromString(config.imageType)
+                    if let path = await sdi.save(pathURL, type: type) {
+                        sdi.path = path.path(percentEncoded: false)
+                    }
+                }
+                ImageStore.shared.add(sdi)
+                seed += 1
+            }
+        }
+
+        await updateState(.ready(nil))
+    }
+
+    private func generateGuernikaImage(_ config: GenerationConfig, storeImage: (CGImage?) async -> Void) async throws {
+        guard let pipeline = guernikaPipeline else {
+            await updateState(.error("Pipeline is not loaded."))
+            throw GeneratorError.pipelineNotAvailable
+        }
+
+        var pipelineConfig = SampleInput(prompt: config.prompt)
+        pipelineConfig.negativePrompt = config.negativePrompt
+        if let size = config.size {
+            pipelineConfig.size = size
+            pipelineConfig.initImage = config.initImage?.scaledAndCroppedTo(size: size)
+            pipelineConfig.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
+        }
+        pipelineConfig.strength = config.strength
+        pipelineConfig.stepCount = config.stepCount
+        pipelineConfig.seed = config.seed
+        pipelineConfig.originalStepCount = config.originalStepCount
+        pipelineConfig.guidanceScale = config.guidanceScale
+        pipelineConfig.scheduler = convertScheduler(config.scheduler)
+
+        // TODO: controlnet
+
         for index in 0..<config.numberOfImages {
             await updateQueueProgress(
-                QueueProgress(index: index, total: inputConfig.numberOfImages))
+                QueueProgress(index: index, total: config.numberOfImages))
             generationStartTime = DispatchTime.now()
 
             let image = try pipeline.generateImages(input: pipelineConfig) {
                 progress in
 
                 Task { @MainActor in
-                    state = .running(progress)
+                    state = .running((step: progress.step, stepCount: progress.stepCount))
                     let endTime = DispatchTime.now()
                     lastStepGenerationElapsedTime = Double(
                         endTime.uptimeNanoseconds - (generationStartTime?.uptimeNanoseconds ?? 0))
@@ -280,37 +351,10 @@ struct GenerationConfig: Sendable, Identifiable {
                 break
             }
 
-            guard let image = image else { continue }
-            if config.upscaleGeneratedImages {
-                guard let upscaledImg = await Upscaler.shared.upscale(cgImage: image) else {
-                    continue
-                }
-                sdi.image = upscaledImg
-                sdi.aspectRatio = CGFloat(
-                    Double(upscaledImg.width) / Double(upscaledImg.height))
-                sdi.upscaler = "RealESRGAN"
-            } else {
-                sdi.image = image
-                sdi.aspectRatio = CGFloat(Double(image.width) / Double(image.height))
-            }
-            sdi.id = UUID()
-            sdi.seed = pipelineConfig.seed
-            sdi.generatedDate = Date.now
-            sdi.path = ""
+            await storeImage(image)
 
-            if config.autosaveImages && !config.imageDir.isEmpty {
-                var pathURL = URL(fileURLWithPath: config.imageDir, isDirectory: true)
-                let count = ImageStore.shared.images.endIndex + 1
-                pathURL.append(path: sdi.filenameWithoutExtension(count: count))
-
-                let type = UTType.fromString(config.imageType)
-                guard let path = await sdi.save(pathURL, type: type) else { continue }
-                sdi.path = path.path(percentEncoded: false)
-            }
-            ImageStore.shared.add(sdi)
             pipelineConfig.seed += 1
         }
-        await updateState(.ready(nil))
     }
 
     func stopGenerate() async {

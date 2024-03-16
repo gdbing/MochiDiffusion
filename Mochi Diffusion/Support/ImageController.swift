@@ -308,7 +308,7 @@ final class ImageController: ObservableObject {
             inpaintMask: maskImage,
             strength: Float(startingImage == nil && currentControlNets.isEmpty ? 1.0 : self.strength),
             stepCount: Int(steps),
-            seed: seed,
+            seed: seed == 0 ? UInt32.random(in: 0..<UInt32.max) : seed,
             originalStepCount: 50,
             guidanceScale: Float(guidanceScale),
             isXL: model.isXL,
@@ -355,7 +355,7 @@ final class ImageController: ObservableObject {
                             genConfig.model.modifyInputSize(width: width, height: height)
                         }
                     }
-                    try await ImageGenerator.shared.loadPipeline(
+                    try await ImageGenerator.shared.loadGuernikaPipeline(
                         model: genConfig.model,
                         controlNet: genConfig.controlNets,
                         computeUnit: genConfig.mlComputeUnit,

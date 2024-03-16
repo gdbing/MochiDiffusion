@@ -61,6 +61,7 @@
 		C11A03882B099D9600540F7F /* JobQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11A03872B099D9600540F7F /* JobQueueView.swift */; };
 		C1220FC02AFB122F007E5055 /* ImageWellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1220FBF2AFB122F007E5055 /* ImageWellView.swift */; };
 		C1ADEC2C2B16957800E142CA /* FolderMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1ADEC2B2B16957800E142CA /* FolderMonitor.swift */; };
+		C1B606602BA56152008977F7 /* GuernikaTypealiases.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B6065F2BA56152008977F7 /* GuernikaTypealiases.swift */; };
 		D7B03F2029D42F9900DF89DD /* SDModelAttentionType.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B03F1F29D42F9900DF89DD /* SDModelAttentionType.swift */; };
 		E45FA5822B7F7E4B009E90F0 /* GuernikaKit in Frameworks */ = {isa = PBXBuildFile; productRef = E45FA5812B7F7E4B009E90F0 /* GuernikaKit */; };
 		E4F15B1D2B86720F00E1EC3C /* de-coremldata.bin in Resources */ = {isa = PBXBuildFile; fileRef = E4F15B1C2B86720F00E1EC3C /* de-coremldata.bin */; };
@@ -135,6 +136,7 @@
 		C11A03872B099D9600540F7F /* JobQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobQueueView.swift; sourceTree = "<group>"; };
 		C1220FBF2AFB122F007E5055 /* ImageWellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageWellView.swift; sourceTree = "<group>"; };
 		C1ADEC2B2B16957800E142CA /* FolderMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderMonitor.swift; sourceTree = "<group>"; };
+		C1B6065F2BA56152008977F7 /* GuernikaTypealiases.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuernikaTypealiases.swift; sourceTree = "<group>"; };
 		D7B03F1F29D42F9900DF89DD /* SDModelAttentionType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SDModelAttentionType.swift; sourceTree = "<group>"; };
 		E4F15B1C2B86720F00E1EC3C /* de-coremldata.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "de-coremldata.bin"; sourceTree = "<group>"; };
 		E4F15B1E2B8673DB00E1EC3C /* en-coremldata.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "en-coremldata.bin"; sourceTree = "<group>"; };
@@ -179,6 +181,7 @@
 				0352E2B4294EA887003FBF25 /* Functions.swift */,
 				03173C142999F5C700B03456 /* ImageController.swift */,
 				03173C102999D83600B03456 /* ImageGenerator.swift */,
+				C1B6065F2BA56152008977F7 /* GuernikaTypealiases.swift */,
 				9B7392C2298DEAC2006F03D5 /* Tokenizer.swift */,
 				03FD231A295F7A81006EEEE2 /* Upscaler.swift */,
 				71D315152B2A584E007FFDEB /* NotificationController.swift */,
@@ -478,6 +481,7 @@
 				0380934329AD504600EDBC8E /* StartingImageView.swift in Sources */,
 				03173C152999F5C700B03456 /* ImageController.swift in Sources */,
 				036BFC22294B9F7500D8AD04 /* MochiDiffusionApp.swift in Sources */,
+				C1B606602BA56152008977F7 /* GuernikaTypealiases.swift in Sources */,
 				03EA52CE297B66C800CDF661 /* SidebarView.swift in Sources */,
 				9B7392C3298DEAC2006F03D5 /* Tokenizer.swift in Sources */,
 				035EDFFE295A220F00080D18 /* SeedView.swift in Sources */,
