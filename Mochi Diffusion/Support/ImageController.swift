@@ -99,7 +99,7 @@ final class ImageController: ObservableObject {
                 self.width = Int(modelWidth)
             }
             modelName = model.name
-            controlNet = model.controlNet
+            controlNet = model.controlNet.map(\.name)
             currentControlNets = []
             tokenizer = Tokenizer(modelDir: model.url, isGuernika: model.isGuernika)
         }
@@ -263,7 +263,7 @@ final class ImageController: ObservableObject {
             var vmodels = [SDModel]()
             for model in try await ImageGenerator.shared.getModels(modelDirectoryURL: modelDirectoryURL, controlNetDirectoryURL: controlNetDirectoryURL) {
                 if model.allowsVariableSize {
-                    if let resizeableCopy = model.resizeableCopy(target: variableSizeModelDir!.appending(component: model.name)) {
+                    if let resizeableCopy = model.resizeableCopy(target: variableSizeModelDir!.appending(component: model.name), controlNet: model.controlNet) {
                         vmodels.append(resizeableCopy)
                     }
                 } else {
@@ -296,16 +296,15 @@ final class ImageController: ObservableObject {
     }
 
     func generate() async {
-        guard let model = currentModel else {
+        guard let model = currentModel, let size = model.allowsVariableSize ? CGSize(width: self.width, height: self.height) : model.inputSize else {
             return
         }
-
         let genConfig = GenerationConfig(
             prompt: prompt,
             negativePrompt: negativePrompt,
-            size: model.allowsVariableSize ? CGSize(width: self.width, height: self.height) : model.inputSize,
-            initImage: startingImage,
-            inpaintMask: maskImage,
+            size: size,
+            initImage: startingImage?.scaledAndCroppedTo(size: size),
+            inpaintMask: maskImage?.scaledAndCroppedTo(size: size),
             strength: Float(startingImage == nil && currentControlNets.isEmpty ? 1.0 : self.strength),
             stepCount: Int(steps),
             seed: seed == 0 ? UInt32.random(in: 0..<UInt32.max) : seed,
@@ -319,7 +318,9 @@ final class ImageController: ObservableObject {
             mlComputeUnit: mlComputeUnitPreference.computeUnits(forModel: model),
             scheduler: scheduler,
             upscaleGeneratedImages: upscaleGeneratedImages,
-            controlNets: currentControlNets.filter { $0.image != nil }.compactMap(\.name),
+            controlNets: currentControlNets
+                .filter { $0.image != nil && $0.name != nil }
+                .compactMap { (name: $0.name!, image: $0.image!.scaledAndCroppedTo(size: size)!) },
             safetyCheckerEnabled: safetyChecker
         )
 
@@ -358,14 +359,14 @@ final class ImageController: ObservableObject {
                         }
                         try await ImageGenerator.shared.loadGuernikaPipeline(
                             model: genConfig.model,
-                            controlNet: genConfig.controlNets,
+                            controlNet: genConfig.controlNets.map(\.name),
                             computeUnit: genConfig.mlComputeUnit,
                             reduceMemory: reduceMemoryOrUpdateInputShape
                         )
                     } else {
                         try await ImageGenerator.shared.loadPipeline(
                             model: genConfig.model,
-                            controlNet: genConfig.controlNets,
+                            controlNet: genConfig.controlNets.map(\.name),
                             computeUnit: genConfig.mlComputeUnit,
                             reduceMemory: self.reduceMemory)
                     }

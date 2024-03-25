@@ -15,7 +15,7 @@ struct SDModel: Identifiable {
     let url: URL
     let name: String
     let attention: SDModelAttentionType
-    let controlNet: [String]
+    var controlNet: [SDControlNet]
     let isXL: Bool
     var inputSize: CGSize?
     let controltype: ControlType?
@@ -42,7 +42,7 @@ struct SDModel: Identifiable {
         self.url = url
         self.name = name
         self.attention = attention
-        self.controlNet = controlNet.filter { $0.size == size && $0.attention == attention && $0.controltype == controltype ?? .all }.map { $0.name }
+        self.controlNet = controlNet.filter { $0.size == size && $0.attention == attention && $0.controltype == controltype ?? .all } // TODO: handle this correctly
         self.isXL = isXL
         self.inputSize = size
         self.controltype = controltype
@@ -65,7 +65,7 @@ extension SDModel: Hashable {
 extension SDModel {
     /// replace VAEEncoder.mlmodelc/coremldata.bin with en-coremldata.bin
     /// replace VAEDecoder.mlmodelc/coremldata.bin with de-coremldata.bin
-    func resizeableCopy(target: URL, controlNet: [SDControlNet] = []) -> SDModel? {
+    func resizeableCopy(target: URL, controlNet: [SDControlNet]) -> SDModel? {
         guard allowsVariableSize && !vaeAllowsVariableSize else {
             return nil
         }

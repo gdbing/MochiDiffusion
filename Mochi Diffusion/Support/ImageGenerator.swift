@@ -30,13 +30,14 @@ struct GenerationConfig: Sendable, Identifiable {
     var mlComputeUnit: MLComputeUnits
     var scheduler: Scheduler
     var upscaleGeneratedImages: Bool
-    var controlNets: [String]
+    var controlNets: [(name: String, image: CGImage)]
     let safetyCheckerEnabled: Bool
 
     func pipelineHash() -> Int {
         var hasher = Hasher()
         hasher.combine(model)
-        hasher.combine(controlNets)
+        hasher.combine(controlNets.map { $0.name })
+        hasher.combine(controlNets.map { $0.image })
         hasher.combine(mlComputeUnit)
         hasher.combine(size)
         hasher.combine(initImage == nil)
@@ -154,18 +155,17 @@ struct GenerationConfig: Sendable, Identifiable {
                     ).path(percentEncoded: false)
                     let hasControlNet = fm.fileExists(atPath: unetMetadataPath)
 
-                    // TODO: controlnet
-//                    if hasControlNet {
-//                        let controlNetSymLinkPath = url.appending(component: "controlnet").path(
-//                            percentEncoded: false)
-//
-//                        if !fm.fileExists(atPath: controlNetSymLinkPath) {
-//                            try? fm.createSymbolicLink(
-//                                atPath: controlNetSymLinkPath,
-//                                withDestinationPath: controlNetDirectoryURL.path(
-//                                    percentEncoded: false))
-//                        }
-//                    }
+                    if hasControlNet {
+                        let controlNetSymLinkPath = url.appending(component: "controlnet").path(
+                            percentEncoded: false)
+
+                        if !fm.fileExists(atPath: controlNetSymLinkPath) {
+                            try? fm.createSymbolicLink(
+                                atPath: controlNetSymLinkPath,
+                                withDestinationPath: controlNetDirectoryURL.path(
+                                    percentEncoded: false))
+                        }
+                    }
 
                     return SDModel(
                         url: url, name: url.lastPathComponent,
@@ -184,7 +184,7 @@ struct GenerationConfig: Sendable, Identifiable {
     }
 
     func loadPipeline(
-        model: SDModel, 
+        model: SDModel,
         controlNet: [String] = [],
         computeUnit: MLComputeUnits,
         reduceMemory: Bool
@@ -269,40 +269,54 @@ struct GenerationConfig: Sendable, Identifiable {
         if config.model.isGuernika {
             guernikaPipelineConfig = SampleInput(prompt: config.prompt)
             guernikaPipelineConfig?.negativePrompt = config.negativePrompt
-            if let size = config.size {
-                guernikaPipelineConfig?.size = size
-                guernikaPipelineConfig?.initImage = config.initImage?.scaledAndCroppedTo(size: size)
-                guernikaPipelineConfig?.inpaintMask = config.inpaintMask?.scaledAndCroppedTo(size: size)
-            }
-            guernikaPipelineConfig?.strength = config.strength
+            guernikaPipelineConfig?.size = config.size
+            guernikaPipelineConfig?.initImage = config.initImage
+            guernikaPipelineConfig?.inpaintMask = config.inpaintMask
+            guernikaPipelineConfig?.strength = config.initImage != nil ? config.strength : 1.0
             guernikaPipelineConfig?.stepCount = config.stepCount
             guernikaPipelineConfig?.seed = config.seed
             guernikaPipelineConfig?.originalStepCount = config.originalStepCount
             guernikaPipelineConfig?.guidanceScale = config.guidanceScale
             guernikaPipelineConfig?.scheduler = convertScheduler(config.scheduler)
 
-            // TODO: controlnet
+            guernikaPipeline?.conditioningInput = []
+            for controlNetInput in config.controlNets {
+                let model = config.model
+                guard 
+                    let controlNet = model.controlNet.first(where: { $0.name == controlNetInput.name })
+                else {
+                    print("Error matching selected ControlNet \(controlNetInput.name) to controlNets available to model \(model.name)")
+                    continue
+                }
+
+                if controlNet.controltype == .controlNet {
+                    guard let c = try? ControlNet(modelAt: controlNet.url) else {
+                        continue
+                    }
+                    let cinput = ConditioningInput.init(module: c)
+                    cinput.image = controlNetInput.image
+                    guernikaPipeline?.conditioningInput.append(cinput)
+                } else if controlNet.controltype == .t2IAdapter {
+                    guard let a = try? T2IAdapter(modelAt: controlNet.url) else {
+                        continue
+                    }
+                    let ainput = ConditioningInput.init(module: a)
+                    ainput.image = controlNetInput.image
+                    guernikaPipeline?.conditioningInput.append(ainput)
+                }
+            }
         } else {
             sdPipelineConfig = StableDiffusionPipeline.Configuration(prompt: config.prompt)
             sdPipelineConfig?.negativePrompt = config.negativePrompt
-            if let size = config.model.inputSize {
-                sdPipelineConfig?.startingImage = config.initImage?.scaledAndCroppedTo(size: size)
-            }
+            sdPipelineConfig?.startingImage = config.initImage
             sdPipelineConfig?.strength = config.strength
             sdPipelineConfig?.stepCount = config.stepCount
             sdPipelineConfig?.seed = config.seed
             sdPipelineConfig?.guidanceScale = config.guidanceScale
             sdPipelineConfig?.disableSafety = !config.safetyCheckerEnabled
-            sdPipelineConfig?.schedulerType = config.scheduler == .pndm ? .pndmScheduler : .dpmSolverMultistepScheduler // TODO: communicate this
-            // TODO: controlnet
-    //        for controlNet in currentControlNets {
-    //            if controlNet.name != nil, let size = currentModel?.inputSize,
-    //                let image = controlNet.image?.scaledAndCroppedTo(size: size)
-    //            {
-    //                pipelineConfig.controlNetInputs.append(image)
-    //            }
-    //        }
-//            sdPipelineConfig?.useDenoisedIntermediates = await ImageController.shared.showHighqualityPreview
+            // TODO: communicate the scheduler subset
+            sdPipelineConfig?.schedulerType = config.scheduler == .pndm ? .pndmScheduler : .dpmSolverMultistepScheduler
+            sdPipelineConfig?.controlNetInputs = config.controlNets.map { $0.image }
             if config.model.isXL {
                 sdPipelineConfig?.encoderScaleFactor = 0.13025
                 sdPipelineConfig?.decoderScaleFactor = 0.13025
@@ -314,10 +328,11 @@ struct GenerationConfig: Sendable, Identifiable {
             await updateQueueProgress(
                 QueueProgress(index: index, total: config.numberOfImages))
             generationStartTime = DispatchTime.now()
-            
+
             var image: CGImage?
             if config.model.isGuernika, let guernikaPipelineConfig {
-                image = try await generateGuernikaImage(config, pipelineConfig: guernikaPipelineConfig)
+                image = try await generateGuernikaImage(
+                    config, pipelineConfig: guernikaPipelineConfig)
             } else if !config.model.isGuernika, let sdPipelineConfig {
                 image = try await generateSDImage(config: config, pipelineConfig: sdPipelineConfig)
             }
@@ -327,7 +342,9 @@ struct GenerationConfig: Sendable, Identifiable {
             }
 
             if let image {
-                if config.upscaleGeneratedImages, let upscaledImg = await Upscaler.shared.upscale(cgImage: image) {
+                if config.upscaleGeneratedImages,
+                    let upscaledImg = await Upscaler.shared.upscale(cgImage: image)
+                {
                     sdi.image = upscaledImg
                     sdi.aspectRatio = CGFloat(
                         Double(upscaledImg.width) / Double(upscaledImg.height))
@@ -361,7 +378,9 @@ struct GenerationConfig: Sendable, Identifiable {
         await updateState(.ready(nil))
     }
 
-    private func generateSDImage(config: GenerationConfig, pipelineConfig: PipelineConfiguration) async throws -> CGImage? {
+    private func generateSDImage(config: GenerationConfig, pipelineConfig: PipelineConfiguration)
+        async throws -> CGImage?
+    {
         guard let pipeline = sdPipeline else {
             await updateState(.error("Pipeline is not loaded."))
             throw GeneratorError.pipelineNotAvailable
@@ -392,7 +411,9 @@ struct GenerationConfig: Sendable, Identifiable {
         return images.first ?? nil
     }
 
-    private func generateGuernikaImage(_ config: GenerationConfig, pipelineConfig: SampleInput) async throws -> CGImage? {
+    private func generateGuernikaImage(_ config: GenerationConfig, pipelineConfig: SampleInput)
+        async throws -> CGImage?
+    {
         guard let pipeline = guernikaPipeline else {
             await updateState(.error("Pipeline is not loaded."))
             throw GeneratorError.pipelineNotAvailable
@@ -412,9 +433,11 @@ struct GenerationConfig: Sendable, Identifiable {
             Task {
                 let currentImage = progress.currentLatentSample
                 if await ImageController.shared.showHighqualityPreview {
-                    ImageStore.shared.setCurrentGenerating(image: try pipeline.decodeToImage(currentImage))
+                    ImageStore.shared.setCurrentGenerating(
+                        image: try pipeline.decodeToImage(currentImage))
                 } else {
-                    ImageStore.shared.setCurrentGenerating(image: pipeline.latentToImage(currentImage))
+                    ImageStore.shared.setCurrentGenerating(
+                        image: pipeline.latentToImage(currentImage))
                 }
             }
 
